@@ -17,15 +17,15 @@ func TestApplyQuery(t *testing.T) {
     "offset": 1000
 	}`
 
-	var query Query
+	query := &Query{}
 
-	err := json.Unmarshal([]byte(jsonQuery), &query)
+	err := json.Unmarshal([]byte(jsonQuery), query)
 	if err != nil {
 		t.Log(err.Error())
 		t.FailNow()
 	}
 
-	scheme := Scheme{
+	scheme := &Scheme{
 		Resolvers: map[string]FilterResolver{
 			"user_id": Int,
 			"name":    String,

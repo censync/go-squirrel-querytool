@@ -16,11 +16,10 @@ var (
 )
 
 var (
-	Int       = IntResolver{}.ToExpr
-	Float     = FloatResolver{}.ToExpr
-	String    = StringResolver{}.ToExpr
-	Boolean   = BoolResolver{}.ToExpr
-	Timestamp = BoolResolver{}.ToExpr
+	Int     = IntResolver{}.ToExpr
+	Float   = FloatResolver{}.ToExpr
+	String  = StringResolver{}.ToExpr
+	Boolean = BoolResolver{}.ToExpr
 )
 
 type FilterResolver func(arg interface{}, label string) (string, []interface{}, error)

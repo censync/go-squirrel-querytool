@@ -52,7 +52,7 @@ type Query struct {
 	Offset  uint64                 `json:"offset"`
 }
 
-func ApplyQuery(q *squirrel.SelectBuilder, scheme Scheme, query Query) error {
+func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
 	var hasFilters bool
 	and := squirrel.And{}
 
