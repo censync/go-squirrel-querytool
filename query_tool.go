@@ -23,12 +23,10 @@ query example:
 package querytool
 
 import (
+	"fmt"
+	"github.com/Masterminds/squirrel"
 	"github.com/friendsofgo/errors"
 	"strings"
-
-	"fmt"
-
-	"github.com/Masterminds/squirrel"
 )
 
 var ErrUnknownField = errors.New("unknown_field")
@@ -47,13 +45,16 @@ type Scheme struct {
 
 type Query struct {
 	Filters map[string]interface{} `json:"filters"`
-	Sorting []string               `json:"sorting"`
+	Sorting interface{}            `json:"sorting"`
 	Limit   uint64                 `json:"limit"`
 	Offset  uint64                 `json:"offset"`
 }
 
 func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
-	var hasFilters bool
+	var (
+		hasFilters bool
+		sorting    []string
+	)
 	and := squirrel.And{}
 
 	for field, filter := range query.Filters {
@@ -75,25 +76,45 @@ func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
 		*q = q.Where(and)
 	}
 
-	for _, orderField := range query.Sorting {
-		field := orderField
-		order := "DESC"
+	if _, ok := query.Sorting.([]string); ok {
+		sorting = query.Sorting.([]string)
+		for _, orderField := range sorting {
+			field := orderField
+			order := "DESC"
 
-		if r := strings.Split(field, " "); len(r) == 2 &&
-			(strings.ToUpper(r[1]) == "DESC" || strings.ToUpper(r[1]) == "ASC") {
-			field = r[0]
-			order = r[1]
+			if r := strings.Split(field, " "); len(r) == 2 &&
+				(strings.ToUpper(r[1]) == "DESC" || strings.ToUpper(r[1]) == "ASC") {
+				field = r[0]
+				order = r[1]
+			}
+
+			_, exists := scheme.Resolvers[field]
+			if !exists {
+				return errors.Wrap(ErrUnknownField, orderField)
+			}
+
+			*q = q.OrderBy(fmt.Sprintf("%s %s", field, order))
 		}
+	} else if _, ok := query.Sorting.(map[string]string); ok {
+		mapSorting := query.Sorting.(map[string]string)
+		for orderField, orderDirection := range mapSorting {
+			field := orderField
+			order := "DESC"
 
-		_, exists := scheme.Resolvers[field]
-		if !exists {
-			return errors.Wrap(ErrUnknownField, orderField)
+			if strings.ToUpper(orderDirection) == "DESC" || strings.ToUpper(orderDirection) == "ASC" {
+				order = orderDirection
+			}
+
+			_, exists := scheme.Resolvers[field]
+			if !exists {
+				return errors.Wrap(ErrUnknownField, orderField)
+			}
+
+			*q = q.OrderBy(fmt.Sprintf("%s %s", field, order))
 		}
-
-		*q = q.OrderBy(fmt.Sprintf("%s %s", field, order))
 	}
 
-	if len(query.Sorting) == 0 {
+	if len(sorting) == 0 {
 		*q = q.OrderBy(scheme.DefaultSort...)
 	}
 
