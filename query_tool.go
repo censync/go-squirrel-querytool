@@ -26,6 +26,9 @@ import (
 	"fmt"
 	"github.com/Masterminds/squirrel"
 	"github.com/friendsofgo/errors"
+	"html"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -35,6 +38,18 @@ const (
 	globalDefaultLimit  = 100
 	globalDefaultOffset = 0
 )
+
+var availableOperators = map[string]bool{
+	"=":      true,
+	"!=":     true,
+	">":      true,
+	"<":      true,
+	"gte":    true,
+	"lte":    true,
+	"in":     true,
+	"not in": true,
+	"like":   true,
+}
 
 type Scheme struct {
 	Resolvers     map[string]FilterResolver
@@ -137,4 +152,138 @@ func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
 	}
 
 	return nil
+}
+
+// Parse query from url values
+func (f *Query) BindQuery(params url.Values) (err error) {
+	for param, values := range params {
+		if f.isArray(param) {
+			rootKey, rootSuffix := f.getRootKey(param)
+			if rootKey == "filters" {
+				err = f.parseFilters(rootSuffix, values)
+			} else if rootKey == "sort" {
+				err = f.parseSorting(rootSuffix, values)
+			}
+			if err != nil {
+				return
+			}
+		} else if param == "limit" && len(values) == 1 {
+			f.Limit, _ = strconv.ParseUint(values[0], 10, 64)
+		} else if param == "offset" {
+			f.Offset, _ = strconv.ParseUint(values[0], 10, 64)
+		}
+	}
+
+	return
+}
+
+func (q *Query) parseFilters(param string, values []string) (err error) {
+	if len(values) == 0 {
+		// query param without values
+		return
+	}
+	if q.Filters == nil {
+		q.Filters = map[string]interface{}{}
+	}
+
+	exists, filterField, filterValues := q.getNested(param)
+	if exists {
+		if q.Filters[filterField] == nil {
+			q.Filters[filterField] = map[string]interface{}{}
+		}
+	}
+
+	tmpFiltersByField := q.Filters[filterField].(map[string]interface{})
+
+	if q.isArray(filterValues) {
+		exists, filterOperator, _ := q.getNested(filterValues)
+		if !exists {
+			return
+		}
+
+		if _, ok := availableOperators[filterOperator]; !ok {
+			return errors.New(fmt.Sprintf("filter operator \"%s\" not supported", html.EscapeString(filterOperator)))
+		}
+
+		if tmpFiltersByField[filterOperator] == nil {
+			tmpFiltersByField[filterOperator] = map[string]interface{}{}
+		}
+
+		if filterOperator == "in" {
+			tmpFiltersByField[filterOperator] = values
+		} else {
+			if len(values) > 1 {
+				return errors.New(fmt.Sprintf("filter operator \"%s\" not support array values", filterOperator))
+			}
+			tmpFiltersByField[filterOperator] = values[0]
+		}
+
+	} else {
+		if len(values) > 1 {
+			return errors.New(fmt.Sprintf("strict filter not support array values"))
+		}
+		tmpFiltersByField["="] = values[0]
+	}
+
+	q.Filters[filterField] = tmpFiltersByField
+
+	return
+}
+
+func (q *Query) parseSorting(param string, values []string) (err error) {
+	if len(values) == 0 {
+		return
+	}
+	if param == "[]" {
+		q.Sorting = values
+	} else {
+		if len(values) == 0 {
+			return
+		}
+		if q.Sorting == nil {
+			q.Sorting = map[string]string{}
+		}
+
+		exists, sortingField, _ := q.getNested(param)
+		if exists {
+			if _, ok := q.Sorting.(map[string]string); !ok {
+				return errors.New("mixed sorting types is not supported")
+			}
+
+			if len(values) == 0 {
+				return errors.New("sorting not support array values")
+			}
+
+			q.Sorting.(map[string]string)[sortingField] = values[0]
+		}
+	}
+	return
+}
+
+func (Query) getRootKey(src string) (key string, suffix string) {
+	startIdx := strings.Index(src, "[")
+	if startIdx != -1 {
+		key = src[:startIdx]
+		suffix = src[startIdx:]
+	}
+	return
+}
+
+func (Query) getNested(src string) (exists bool, key string, suffix string) {
+	startIdx := strings.Index(src, "[")
+	if startIdx != -1 {
+		endIdx := strings.Index(src[startIdx:], "]")
+		if endIdx != -1 {
+			exists = true
+			key = src[startIdx+1 : startIdx+endIdx]
+			suffix = src[endIdx+1:]
+		}
+	}
+	return
+}
+
+func (Query) isArray(src string) bool {
+	startIdx := strings.Index(src, "[")
+	endIdx := strings.Index(src, "]")
+	return startIdx > -1 && endIdx > -1 && endIdx > startIdx
 }
