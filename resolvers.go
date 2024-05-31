@@ -39,7 +39,7 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 			return "", nil, ErrWrongType
 		}
 
-		if _, ok := m["="]; ok {
+		if _, ok = m["="]; ok {
 			sl, ok := m["="].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -48,7 +48,7 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 			and = append(and, squirrel.Eq{label: sl})
 		}
 
-		if _, ok := m["!="]; ok {
+		if _, ok = m["!="]; ok {
 			sl, ok := m["!="].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -57,7 +57,7 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 			and = append(and, squirrel.NotEq{label: sl})
 		}
 
-		if _, ok := m["in"]; ok {
+		if _, ok = m["in"]; ok {
 			sl, ok := m["in"].([]interface{})
 			if !ok {
 				return "", nil, ErrWrongType
@@ -75,7 +75,7 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 			and = append(and, squirrel.Eq{label: arr})
 		}
 
-		if _, ok := m["gt"]; ok {
+		if _, ok = m["gt"]; ok {
 			sl, ok := m["gt"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -84,7 +84,7 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 			and = append(and, squirrel.Gt{label: sl})
 		}
 
-		if _, ok := m["gte"]; ok {
+		if _, ok = m["gte"]; ok {
 			sl, ok := m["gte"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -93,7 +93,7 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 			and = append(and, squirrel.GtOrEq{label: sl})
 		}
 
-		if _, ok := m["lt"]; ok {
+		if _, ok = m["lt"]; ok {
 			sl, ok := m["lt"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -102,7 +102,7 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 			and = append(and, squirrel.Lt{label: sl})
 		}
 
-		if _, ok := m["lte"]; ok {
+		if _, ok = m["lte"]; ok {
 			sl, ok := m["lte"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -133,7 +133,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			return "", nil, ErrWrongType
 		}
 
-		if _, ok := m["in"]; ok {
+		if _, ok = m["in"]; ok {
 			sl, ok := m["in"].([]interface{})
 			if !ok {
 				return "", nil, ErrWrongType
@@ -151,7 +151,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			and = append(and, squirrel.Eq{label: arr})
 		}
 
-		if _, ok := m["="]; ok {
+		if _, ok = m["="]; ok {
 			sl, ok := m["="].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -160,7 +160,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			and = append(and, squirrel.Eq{label: sl})
 		}
 
-		if _, ok := m["not in"]; ok {
+		if _, ok = m["not in"]; ok {
 			sl, ok := m["not in"].([]interface{})
 			if !ok {
 				return "", nil, ErrWrongType
@@ -169,7 +169,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			and = append(and, squirrel.NotEq{label: sl})
 		}
 
-		if _, ok := m["!="]; ok {
+		if _, ok = m["!="]; ok {
 			sl, ok := m["!="].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -178,7 +178,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			and = append(and, squirrel.NotEq{label: sl})
 		}
 
-		if _, ok := m["gt"]; ok {
+		if _, ok = m["gt"]; ok {
 			sl, ok := m["gt"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -187,7 +187,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			and = append(and, squirrel.Gt{label: sl})
 		}
 
-		if _, ok := m["gte"]; ok {
+		if _, ok = m["gte"]; ok {
 			sl, ok := m["gte"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -196,7 +196,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			and = append(and, squirrel.GtOrEq{label: sl})
 		}
 
-		if _, ok := m["lt"]; ok {
+		if _, ok = m["lt"]; ok {
 			sl, ok := m["lt"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -205,7 +205,7 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 			and = append(and, squirrel.Lt{label: sl})
 		}
 
-		if _, ok := m["lte"]; ok {
+		if _, ok = m["lte"]; ok {
 			sl, ok := m["lte"].(float64)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -238,7 +238,7 @@ func (sr StringResolver) ToExpr(arg interface{}, label string) (string, []interf
 			return squirrel.Expr(fmt.Sprintf("%s LIKE ?", label), i).ToSql()
 		}
 
-		if _, ok := m["in"]; ok {
+		if _, ok = m["in"]; ok {
 			sl, ok := m["in"].([]interface{})
 			if !ok {
 				return "", nil, ErrWrongType
@@ -256,7 +256,7 @@ func (sr StringResolver) ToExpr(arg interface{}, label string) (string, []interf
 			return squirrel.Eq{label: pq.StringArray(arr)}.ToSql()
 		}
 
-		if _, ok := m["="]; ok {
+		if _, ok = m["="]; ok {
 			sl, ok := m["="].(string)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -265,7 +265,7 @@ func (sr StringResolver) ToExpr(arg interface{}, label string) (string, []interf
 			return squirrel.Eq{label: sl}.ToSql()
 		}
 
-		if _, ok := m["!="]; ok {
+		if _, ok = m["!="]; ok {
 			sl, ok := m["!="].(string)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -274,7 +274,7 @@ func (sr StringResolver) ToExpr(arg interface{}, label string) (string, []interf
 			return squirrel.NotEq{label: sl}.ToSql()
 		}
 
-		if _, ok := m["not in"]; ok {
+		if _, ok = m["not in"]; ok {
 			sl, ok := m["not in"].([]interface{})
 			if !ok {
 				return "", nil, ErrWrongType
@@ -305,7 +305,7 @@ func (fr BoolResolver) ToExpr(arg interface{}, label string) (string, []interfac
 			return "", nil, ErrWrongType
 		}
 
-		if _, ok := m["="]; ok {
+		if _, ok = m["="]; ok {
 			sl, ok := m["="].(bool)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -314,7 +314,7 @@ func (fr BoolResolver) ToExpr(arg interface{}, label string) (string, []interfac
 			and = append(and, squirrel.Eq{label: sl})
 		}
 
-		if _, ok := m["!="]; ok {
+		if _, ok = m["!="]; ok {
 			sl, ok := m["!="].(bool)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -345,7 +345,7 @@ func (ir TimestampResolver) ToExpr(arg interface{}, label string) (string, []int
 			return "", nil, ErrWrongType
 		}
 
-		if _, ok := m["="]; ok {
+		if _, ok = m["="]; ok {
 			sl, ok := m["="].(string)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -354,7 +354,7 @@ func (ir TimestampResolver) ToExpr(arg interface{}, label string) (string, []int
 			and = append(and, squirrel.Eq{label: sl})
 		}
 
-		if _, ok := m["!="]; ok {
+		if _, ok = m["!="]; ok {
 			sl, ok := m["!="].(string)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -363,7 +363,7 @@ func (ir TimestampResolver) ToExpr(arg interface{}, label string) (string, []int
 			and = append(and, squirrel.NotEq{label: sl})
 		}
 
-		if _, ok := m["in"]; ok {
+		if _, ok = m["in"]; ok {
 			sl, ok := m["in"].([]interface{})
 			if !ok {
 				return "", nil, ErrWrongType
@@ -381,7 +381,7 @@ func (ir TimestampResolver) ToExpr(arg interface{}, label string) (string, []int
 			and = append(and, squirrel.Eq{label: pq.StringArray(arr)})
 		}
 
-		if _, ok := m["gt"]; ok {
+		if _, ok = m["gt"]; ok {
 			sl, ok := m["gt"].(string)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -390,7 +390,7 @@ func (ir TimestampResolver) ToExpr(arg interface{}, label string) (string, []int
 			and = append(and, squirrel.Gt{label: sl})
 		}
 
-		if _, ok := m["gte"]; ok {
+		if _, ok = m["gte"]; ok {
 			sl, ok := m["gte"].(string)
 			if !ok {
 				return "", nil, ErrWrongType
@@ -399,7 +399,7 @@ func (ir TimestampResolver) ToExpr(arg interface{}, label string) (string, []int
 			and = append(and, squirrel.GtOrEq{label: sl})
 		}
 
-		if _, ok := m["lt"]; ok {
+		if _, ok = m["lt"]; ok {
 			sl, ok := m["lt"].(string)
 			if !ok {
 				return "", nil, ErrWrongType

@@ -11,7 +11,9 @@ func TestApplyQuery(t *testing.T) {
 	jsonQuery := `{
     "filters": {
         "user_id": 123,
-		"name": {"in": ["sdf", "fdsg"]}
+		"name": {"in": ["sdf", "fdsg"]},
+		"flag": true,
+		"balance": {"gte": 4.3242}
     },
     "sorting": ["user_id"],
     "offset": 1000
@@ -29,6 +31,8 @@ func TestApplyQuery(t *testing.T) {
 		Resolvers: map[string]FilterResolver{
 			"user_id": Int,
 			"name":    String,
+			"flag":    Boolean,
+			"balance": Float,
 		},
 		DefaultLimit: 321,
 	}
