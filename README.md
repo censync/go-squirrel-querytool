@@ -110,7 +110,6 @@ func GetUsersList(c echo.Context) error {
 }
 ```
 ### Binding query request ###
-```
 ```go
 func GetUsersList(c echo.Context) error {
    request := &req.UsersListQueryForm{}
