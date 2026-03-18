@@ -2,115 +2,143 @@ package querytool
 
 import (
 	"errors"
-	"github.com/lib/pq"
-	"reflect"
-	"time"
-
 	"fmt"
+	"time"
 
 	"github.com/Masterminds/squirrel"
 )
 
 var (
-	ErrWrongType = errors.New("wrong_type")
+	ErrWrongType       = errors.New("wrong_type")
+	ErrUnknownOperator = errors.New("unknown_operator")
 )
 
 var (
-	Int     = IntResolver{}.ToExpr
-	Float   = FloatResolver{}.ToExpr
-	String  = StringResolver{}.ToExpr
-	Boolean = BoolResolver{}.ToExpr
+	Int       = IntResolver{}.ToExpr
+	Float     = FloatResolver{}.ToExpr
+	String    = StringResolver{}.ToExpr
+	Boolean   = BoolResolver{}.ToExpr
+	Timestamp = TimestampResolver{}.ToExpr
 )
 
 type FilterResolver func(arg interface{}, label string) (string, []interface{}, error)
 
+// scalarOp applies a single-value comparison operator to the AND clause.
+// Accepts the operator name and the expected Go type for validation.
+func scalarOp[T comparable](and *squirrel.And, m map[string]interface{}, op string, label string, mkSqlizer func(string, T) squirrel.Sqlizer) error {
+	val, ok := m[op]
+	if !ok {
+		return nil
+	}
+	typed, ok := val.(T)
+	if !ok {
+		return ErrWrongType
+	}
+	*and = append(*and, mkSqlizer(label, typed))
+	return nil
+}
+
+func eq[T comparable](label string, v T) squirrel.Sqlizer    { return squirrel.Eq{label: v} }
+func notEq[T comparable](label string, v T) squirrel.Sqlizer { return squirrel.NotEq{label: v} }
+func gt[T comparable](label string, v T) squirrel.Sqlizer    { return squirrel.Gt{label: v} }
+func gtEq[T comparable](label string, v T) squirrel.Sqlizer  { return squirrel.GtOrEq{label: v} }
+func lt[T comparable](label string, v T) squirrel.Sqlizer    { return squirrel.Lt{label: v} }
+func ltEq[T comparable](label string, v T) squirrel.Sqlizer  { return squirrel.LtOrEq{label: v} }
+
+// sliceOp extracts a []interface{} value from m[op], converts each element via conv,
+// and appends the appropriate Eq or NotEq clause.
+func sliceOp[T any](and *squirrel.And, m map[string]interface{}, op string, label string, conv func(interface{}) (T, bool), negate bool) error {
+	raw, ok := m[op]
+	if !ok {
+		return nil
+	}
+	sl, ok := raw.([]interface{})
+	if !ok {
+		return ErrWrongType
+	}
+	arr := make([]T, 0, len(sl))
+	for _, v := range sl {
+		if typed, ok := conv(v); ok {
+			arr = append(arr, typed)
+		}
+	}
+	if negate {
+		*and = append(*and, squirrel.NotEq{label: arr})
+	} else {
+		*and = append(*and, squirrel.Eq{label: arr})
+	}
+	return nil
+}
+
+// nullOp handles IS NULL / IS NOT NULL operators.
+func nullOp(and *squirrel.And, m map[string]interface{}, label string) {
+	if _, ok := m["null"]; ok {
+		*and = append(*and, squirrel.Eq{label: nil})
+	}
+	if _, ok := m["not null"]; ok {
+		*and = append(*and, squirrel.NotEq{label: nil})
+	}
+}
+
+// numericOps applies all standard numeric comparison operators (=, !=, gt, gte, lt, lte).
+func numericOps[T comparable](and *squirrel.And, m map[string]interface{}, label string) error {
+	ops := []struct {
+		key string
+		fn  func(string, T) squirrel.Sqlizer
+	}{
+		{"=", eq[T]}, {"!=", notEq[T]},
+		{"gt", gt[T]}, {"gte", gtEq[T]},
+		{"lt", lt[T]}, {"lte", ltEq[T]},
+	}
+	for _, o := range ops {
+		if err := scalarOp(and, m, o.key, label, o.fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func toInt64(v interface{}) (int64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), true
+	case int64:
+		return n, true
+	default:
+		return 0, false
+	}
+}
+
+func toFloat64(v interface{}) (float64, bool) {
+	n, ok := v.(float64)
+	return n, ok
+}
+
+func toString(v interface{}) (string, bool) {
+	s, ok := v.(string)
+	return s, ok
+}
+
+// ------- Resolvers -------
+
 type IntResolver struct{}
 
-func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
-	value := reflect.ValueOf(arg)
-	switch value.Kind() {
-	case reflect.Float64:
-		return squirrel.Eq{label: int64(value.Float())}.ToSql()
-	case reflect.Map:
+func (IntResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
+	switch v := arg.(type) {
+	case float64:
+		return squirrel.Eq{label: int64(v)}.ToSql()
+	case map[string]interface{}:
 		and := squirrel.And{}
-
-		m, ok := arg.(map[string]interface{})
-		if !ok {
-			return "", nil, ErrWrongType
+		if err := numericOps[float64](&and, v, label); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["="]; ok {
-			sl, ok := m["="].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Eq{label: sl})
+		if err := sliceOp(&and, v, "in", label, toInt64, false); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["!="]; ok {
-			sl, ok := m["!="].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.NotEq{label: sl})
+		if err := sliceOp(&and, v, "not in", label, toInt64, true); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["in"]; ok {
-			sl, ok := m["in"].([]interface{})
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			arr := make([]int64, 0)
-
-			for _, val := range sl {
-				s, ok := val.(int64)
-				if ok {
-					arr = append(arr, s)
-				}
-			}
-
-			and = append(and, squirrel.Eq{label: arr})
-		}
-
-		if _, ok = m["gt"]; ok {
-			sl, ok := m["gt"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Gt{label: sl})
-		}
-
-		if _, ok = m["gte"]; ok {
-			sl, ok := m["gte"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.GtOrEq{label: sl})
-		}
-
-		if _, ok = m["lt"]; ok {
-			sl, ok := m["lt"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Lt{label: sl})
-		}
-
-		if _, ok = m["lte"]; ok {
-			sl, ok := m["lte"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.LtOrEq{label: sl})
-		}
-
+		nullOp(&and, v, label)
 		return and.ToSql()
 	default:
 		return "", nil, ErrWrongType
@@ -119,101 +147,22 @@ func (ir IntResolver) ToExpr(arg interface{}, label string) (string, []interface
 
 type FloatResolver struct{}
 
-func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
-	value := reflect.ValueOf(arg)
-
-	switch value.Kind() {
-	case reflect.Float64:
-		return squirrel.Eq{label: value.Float()}.ToSql()
-	case reflect.Map:
+func (FloatResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
+	switch v := arg.(type) {
+	case float64:
+		return squirrel.Eq{label: v}.ToSql()
+	case map[string]interface{}:
 		and := squirrel.And{}
-
-		m, ok := arg.(map[string]interface{})
-		if !ok {
-			return "", nil, ErrWrongType
+		if err := numericOps[float64](&and, v, label); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["in"]; ok {
-			sl, ok := m["in"].([]interface{})
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			arr := make([]float64, 0)
-
-			for _, val := range sl {
-				s, ok := val.(float64)
-				if ok {
-					arr = append(arr, s)
-				}
-			}
-
-			and = append(and, squirrel.Eq{label: arr})
+		if err := sliceOp(&and, v, "in", label, toFloat64, false); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["="]; ok {
-			sl, ok := m["="].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Eq{label: sl})
+		if err := sliceOp(&and, v, "not in", label, toFloat64, true); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["not in"]; ok {
-			sl, ok := m["not in"].([]interface{})
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.NotEq{label: sl})
-		}
-
-		if _, ok = m["!="]; ok {
-			sl, ok := m["!="].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.NotEq{label: sl})
-		}
-
-		if _, ok = m["gt"]; ok {
-			sl, ok := m["gt"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Gt{label: sl})
-		}
-
-		if _, ok = m["gte"]; ok {
-			sl, ok := m["gte"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.GtOrEq{label: sl})
-		}
-
-		if _, ok = m["lt"]; ok {
-			sl, ok := m["lt"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Lt{label: sl})
-		}
-
-		if _, ok = m["lte"]; ok {
-			sl, ok := m["lte"].(float64)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.LtOrEq{label: sl})
-		}
-
+		nullOp(&and, v, label)
 		return and.ToSql()
 	default:
 		return "", nil, ErrWrongType
@@ -222,68 +171,34 @@ func (fr FloatResolver) ToExpr(arg interface{}, label string) (string, []interfa
 
 type StringResolver struct{}
 
-func (sr StringResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
-	value := reflect.ValueOf(arg)
-
-	switch value.Kind() {
-	case reflect.String:
-		return squirrel.Eq{label: value.String()}.ToSql()
-	case reflect.Map:
-		m, ok := arg.(map[string]interface{})
-		if !ok {
-			return "", nil, ErrWrongType
+func (StringResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
+	switch v := arg.(type) {
+	case string:
+		return squirrel.Eq{label: v}.ToSql()
+	case map[string]interface{}:
+		if pattern, ok := v["like"]; ok {
+			return squirrel.Expr(fmt.Sprintf("%s LIKE ?", label), pattern).ToSql()
 		}
 
-		if i, ok := m["like"]; ok {
-			return squirrel.Expr(fmt.Sprintf("%s LIKE ?", label), i).ToSql()
+		and := squirrel.And{}
+		if err := scalarOp(&and, v, "=", label, eq[string]); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["in"]; ok {
-			sl, ok := m["in"].([]interface{})
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			arr := make([]string, 0)
-
-			for _, val := range sl {
-				s, ok := val.(string)
-				if ok {
-					arr = append(arr, s)
-				}
-			}
-
-			return squirrel.Eq{label: pq.StringArray(arr)}.ToSql()
+		if err := scalarOp(&and, v, "!=", label, notEq[string]); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["="]; ok {
-			sl, ok := m["="].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			return squirrel.Eq{label: sl}.ToSql()
+		if err := sliceOp(&and, v, "in", label, toString, false); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["!="]; ok {
-			sl, ok := m["!="].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			return squirrel.NotEq{label: sl}.ToSql()
+		if err := sliceOp(&and, v, "not in", label, toString, true); err != nil {
+			return "", nil, err
 		}
+		nullOp(&and, v, label)
 
-		if _, ok = m["not in"]; ok {
-			sl, ok := m["not in"].([]interface{})
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			return squirrel.NotEq{label: sl}.ToSql()
+		if len(and) == 0 {
+			return "", nil, fmt.Errorf("%w: no recognized operator for field %q", ErrUnknownOperator, label)
 		}
-
-		return "", nil, nil
+		return and.ToSql()
 	default:
 		return "", nil, ErrWrongType
 	}
@@ -291,38 +206,19 @@ func (sr StringResolver) ToExpr(arg interface{}, label string) (string, []interf
 
 type BoolResolver struct{}
 
-func (fr BoolResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
-	value := reflect.ValueOf(arg)
-
-	switch value.Kind() {
-	case reflect.Bool:
-		return squirrel.Eq{label: value.Bool()}.ToSql()
-	case reflect.Map:
+func (BoolResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
+	switch v := arg.(type) {
+	case bool:
+		return squirrel.Eq{label: v}.ToSql()
+	case map[string]interface{}:
 		and := squirrel.And{}
-
-		m, ok := arg.(map[string]interface{})
-		if !ok {
-			return "", nil, ErrWrongType
+		if err := scalarOp(&and, v, "=", label, eq[bool]); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["="]; ok {
-			sl, ok := m["="].(bool)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Eq{label: sl})
+		if err := scalarOp(&and, v, "!=", label, notEq[bool]); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["!="]; ok {
-			sl, ok := m["!="].(bool)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.NotEq{label: sl})
-		}
-
+		nullOp(&and, v, label)
 		return and.ToSql()
 	default:
 		return "", nil, ErrWrongType
@@ -331,92 +227,19 @@ func (fr BoolResolver) ToExpr(arg interface{}, label string) (string, []interfac
 
 type TimestampResolver struct{}
 
-func (ir TimestampResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
-	value := reflect.ValueOf(arg)
-	switch value.Kind() {
-	case reflect.Float64:
-		// Timestamp to time
-		return squirrel.Eq{label: time.Unix(int64(value.Float()), 0)}.ToSql()
-	case reflect.Map:
+func (TimestampResolver) ToExpr(arg interface{}, label string) (string, []interface{}, error) {
+	switch v := arg.(type) {
+	case float64:
+		return squirrel.Eq{label: time.Unix(int64(v), 0)}.ToSql()
+	case map[string]interface{}:
 		and := squirrel.And{}
-
-		m, ok := arg.(map[string]interface{})
-		if !ok {
-			return "", nil, ErrWrongType
+		if err := numericOps[string](&and, v, label); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["="]; ok {
-			sl, ok := m["="].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Eq{label: sl})
+		if err := sliceOp(&and, v, "in", label, toString, false); err != nil {
+			return "", nil, err
 		}
-
-		if _, ok = m["!="]; ok {
-			sl, ok := m["!="].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.NotEq{label: sl})
-		}
-
-		if _, ok = m["in"]; ok {
-			sl, ok := m["in"].([]interface{})
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			arr := make([]string, 0)
-
-			for _, val := range sl {
-				s, ok := val.(string)
-				if ok {
-					arr = append(arr, s)
-				}
-			}
-
-			and = append(and, squirrel.Eq{label: pq.StringArray(arr)})
-		}
-
-		if _, ok = m["gt"]; ok {
-			sl, ok := m["gt"].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Gt{label: sl})
-		}
-
-		if _, ok = m["gte"]; ok {
-			sl, ok := m["gte"].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.GtOrEq{label: sl})
-		}
-
-		if _, ok = m["lt"]; ok {
-			sl, ok := m["lt"].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.Lt{label: sl})
-		}
-
-		if _, ok := m["lte"]; ok {
-			sl, ok := m["lte"].(string)
-			if !ok {
-				return "", nil, ErrWrongType
-			}
-
-			and = append(and, squirrel.LtOrEq{label: sl})
-		}
-
+		nullOp(&and, v, label)
 		return and.ToSql()
 	default:
 		return "", nil, ErrWrongType

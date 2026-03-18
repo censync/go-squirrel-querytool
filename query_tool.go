@@ -1,38 +1,38 @@
 /*
 query example:
 
-{
-   "filters":{
-      "phone":{
-         "like":"+7%"
-      },
-      "sex":0,
-      "firstname":{
-         "in":[
-            "firstname",
-            ""
-         ]
-      }
-   },
-   "sort":[
-      "created_at ASC"
-   ],
-   "limit":200,
-   "offset":0
-}*/
+	{
+	   "filters":{
+	      "phone":{
+	         "like":"+7%"
+	      },
+	      "sex":0,
+	      "firstname":{
+	         "in":[
+	            "firstname",
+	            ""
+	         ]
+	      }
+	   },
+	   "sort":[
+	      "created_at ASC"
+	   ],
+	   "limit":200,
+	   "offset":0
+	}
+*/
 package querytool
 
 import (
 	"fmt"
-	"github.com/Masterminds/squirrel"
-	"github.com/friendsofgo/errors"
-	"html"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/Masterminds/squirrel"
 )
 
-var ErrUnknownField = errors.New("unknown_field")
+var ErrUnknownField = fmt.Errorf("unknown_field")
 
 const (
 	globalDefaultLimit  = 100
@@ -40,21 +40,26 @@ const (
 )
 
 var availableOperators = map[string]bool{
-	"=":      true,
-	"!=":     true,
-	">":      true,
-	"<":      true,
-	"gte":    true,
-	"lte":    true,
-	"in":     true,
-	"not in": true,
-	"like":   true,
+	"=":        true,
+	"!=":       true,
+	">":        true,
+	"<":        true,
+	"gt":       true,
+	"lt":       true,
+	"gte":      true,
+	"lte":      true,
+	"in":       true,
+	"not in":   true,
+	"like":     true,
+	"null":     true,
+	"not null": true,
 }
 
 type Scheme struct {
 	Resolvers     map[string]FilterResolver
 	DefaultOffset uint64
 	DefaultLimit  uint64 // global default = globalDefaultLimit
+	MaxLimit      uint64 // if set, caps the user-requested limit
 	DefaultSort   []string
 }
 
@@ -68,19 +73,19 @@ type Query struct {
 func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
 	var (
 		hasFilters bool
-		sorting    []string
+		hasSorting bool
 	)
 	and := squirrel.And{}
 
 	for field, filter := range query.Filters {
 		resolver, exists := scheme.Resolvers[field]
 		if !exists {
-			return errors.Wrap(ErrUnknownField, field)
+			return fmt.Errorf("%w: %s", ErrUnknownField, field)
 		}
 
 		expr, args, err := resolver(filter, field)
 		if err != nil {
-			return errors.Wrap(err, field)
+			return fmt.Errorf("field %s: %w", field, err)
 		}
 
 		and = append(and, squirrel.Expr(expr, args...))
@@ -91,9 +96,30 @@ func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
 		*q = q.Where(and)
 	}
 
-	if _, ok := query.Sorting.([]string); ok {
-		sorting = query.Sorting.([]string)
-		for _, orderField := range sorting {
+	// Normalize sorting: JSON unmarshal produces []interface{} and map[string]interface{},
+	// so we convert them to the expected Go types.
+	switch s := query.Sorting.(type) {
+	case []interface{}:
+		strs := make([]string, 0, len(s))
+		for _, v := range s {
+			if str, ok := v.(string); ok {
+				strs = append(strs, str)
+			}
+		}
+		query.Sorting = strs
+	case map[string]interface{}:
+		m := make(map[string]string, len(s))
+		for k, v := range s {
+			if str, ok := v.(string); ok {
+				m[k] = str
+			}
+		}
+		query.Sorting = m
+	}
+
+	if sortSlice, ok := query.Sorting.([]string); ok {
+		hasSorting = true
+		for _, orderField := range sortSlice {
 			field := orderField
 			order := "DESC"
 
@@ -105,13 +131,13 @@ func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
 
 			_, exists := scheme.Resolvers[field]
 			if !exists {
-				return errors.Wrap(ErrUnknownField, orderField)
+				return fmt.Errorf("%w: %s", ErrUnknownField, orderField)
 			}
 
 			*q = q.OrderBy(fmt.Sprintf("%s %s", field, order))
 		}
-	} else if _, ok := query.Sorting.(map[string]string); ok {
-		mapSorting := query.Sorting.(map[string]string)
+	} else if mapSorting, ok := query.Sorting.(map[string]string); ok {
+		hasSorting = true
 		for orderField, orderDirection := range mapSorting {
 			field := orderField
 			order := "DESC"
@@ -122,33 +148,34 @@ func ApplyQuery(q *squirrel.SelectBuilder, scheme *Scheme, query *Query) error {
 
 			_, exists := scheme.Resolvers[field]
 			if !exists {
-				return errors.Wrap(ErrUnknownField, orderField)
+				return fmt.Errorf("%w: %s", ErrUnknownField, orderField)
 			}
 
 			*q = q.OrderBy(fmt.Sprintf("%s %s", field, order))
 		}
 	}
 
-	if len(sorting) == 0 {
+	if !hasSorting {
 		*q = q.OrderBy(scheme.DefaultSort...)
 	}
 
-	if query.Limit == 0 {
-		*q = q.Limit(globalDefaultLimit)
-	} else if query.Limit > 0 {
-		*q = q.Limit(query.Limit)
-	} else if scheme.DefaultLimit > 0 {
-		*q = q.Limit(scheme.DefaultLimit)
-	} else {
-		*q = q.Limit(globalDefaultLimit)
+	limit := query.Limit
+	if limit == 0 {
+		if scheme.DefaultLimit > 0 {
+			limit = scheme.DefaultLimit
+		} else {
+			limit = globalDefaultLimit
+		}
 	}
+	if scheme.MaxLimit > 0 && limit > scheme.MaxLimit {
+		limit = scheme.MaxLimit
+	}
+	*q = q.Limit(limit)
 
 	if query.Offset > 0 {
 		*q = q.Offset(query.Offset)
 	} else if scheme.DefaultOffset > 0 {
 		*q = q.Offset(scheme.DefaultOffset)
-	} else if query.Offset < 0 {
-		*q = q.Limit(globalDefaultOffset)
 	}
 
 	return nil
@@ -179,7 +206,6 @@ func (f *Query) BindQuery(params url.Values) (err error) {
 
 func (q *Query) parseFilters(param string, values []string) (err error) {
 	if len(values) == 0 {
-		// query param without values
 		return
 	}
 	if q.Filters == nil {
@@ -202,7 +228,7 @@ func (q *Query) parseFilters(param string, values []string) (err error) {
 		}
 
 		if _, ok := availableOperators[filterOperator]; !ok {
-			return errors.New(fmt.Sprintf("filter operator \"%s\" not supported", html.EscapeString(filterOperator)))
+			return fmt.Errorf("filter operator %q not supported", filterOperator)
 		}
 
 		if tmpFiltersByField[filterOperator] == nil {
@@ -213,14 +239,14 @@ func (q *Query) parseFilters(param string, values []string) (err error) {
 			tmpFiltersByField[filterOperator] = values
 		} else {
 			if len(values) > 1 {
-				return errors.New(fmt.Sprintf("filter operator \"%s\" not support array values", filterOperator))
+				return fmt.Errorf("filter operator %q does not support array values", filterOperator)
 			}
 			tmpFiltersByField[filterOperator] = values[0]
 		}
 
 	} else {
 		if len(values) > 1 {
-			return errors.New(fmt.Sprintf("strict filter not support array values"))
+			return fmt.Errorf("strict filter does not support array values")
 		}
 		tmpFiltersByField["="] = values[0]
 	}
@@ -247,11 +273,11 @@ func (q *Query) parseSorting(param string, values []string) (err error) {
 		exists, sortingField, _ := q.getNested(param)
 		if exists {
 			if _, ok := q.Sorting.(map[string]string); !ok {
-				return errors.New("mixed sorting types is not supported")
+				return fmt.Errorf("mixed sorting types is not supported")
 			}
 
 			if len(values) == 0 {
-				return errors.New("sorting not support array values")
+				return fmt.Errorf("sorting does not support array values")
 			}
 
 			q.Sorting.(map[string]string)[sortingField] = values[0]
