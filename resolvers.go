@@ -75,7 +75,7 @@ func nullOp(and *squirrel.And, m map[string]interface{}, label string) {
 	if _, ok := m["null"]; ok {
 		*and = append(*and, squirrel.Eq{label: nil})
 	}
-	if _, ok := m["not null"]; ok {
+	if _, ok := m["not_null"]; ok {
 		*and = append(*and, squirrel.NotEq{label: nil})
 	}
 }

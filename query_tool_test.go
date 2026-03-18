@@ -727,7 +727,7 @@ func TestIntResolver_Null(t *testing.T) {
 }
 
 func TestIntResolver_NotNull(t *testing.T) {
-	sql, _ := buildSQL(t, defaultScheme(), `{"filters":{"user_id": {"not null": true}}}`)
+	sql, _ := buildSQL(t, defaultScheme(), `{"filters":{"user_id": {"not_null": true}}}`)
 	if !strings.Contains(sql, "user_id IS NOT NULL") {
 		t.Errorf("expected 'user_id IS NOT NULL', got: %s", sql)
 	}

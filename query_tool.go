@@ -52,7 +52,7 @@ var availableOperators = map[string]bool{
 	"not in":   true,
 	"like":     true,
 	"null":     true,
-	"not null": true,
+	"not_null": true,
 }
 
 type Scheme struct {

@@ -27,11 +27,11 @@ Every field can be omitted. Default values are applied from the `Scheme` configu
 
 | Resolver    | Go variable | Supported operators                                     |
 |-------------|-------------|---------------------------------------------------------|
-| IntResolver | `Int`       | `=`, `!=`, `gt`, `gte`, `lt`, `lte`, `in`, `not in`, `null`, `not null` |
-| FloatResolver | `Float`   | `=`, `!=`, `gt`, `gte`, `lt`, `lte`, `in`, `not in`, `null`, `not null` |
-| StringResolver | `String` | `=`, `!=`, `like`, `in`, `not in`, `null`, `not null`   |
-| BoolResolver | `Boolean`  | `=`, `!=`, `null`, `not null`                           |
-| TimestampResolver | `Timestamp` | `=`, `!=`, `gt`, `gte`, `lt`, `lte`, `in`, `null`, `not null` |
+| IntResolver | `Int`       | `=`, `!=`, `gt`, `gte`, `lt`, `lte`, `in`, `not in`, `null`, `not_null` |
+| FloatResolver | `Float`   | `=`, `!=`, `gt`, `gte`, `lt`, `lte`, `in`, `not in`, `null`, `not_null` |
+| StringResolver | `String` | `=`, `!=`, `like`, `in`, `not in`, `null`, `not_null`   |
+| BoolResolver | `Boolean`  | `=`, `!=`, `null`, `not_null`                           |
+| TimestampResolver | `Timestamp` | `=`, `!=`, `gt`, `gte`, `lt`, `lte`, `in`, `null`, `not_null` |
 
 ## Filtering operators
 
@@ -85,7 +85,7 @@ Not equal:
 
 ```json
 {"deleted_at": {"null": true}}
-{"email": {"not null": true}}
+{"email": {"not_null": true}}
 ```
 
 ### Combining operators
